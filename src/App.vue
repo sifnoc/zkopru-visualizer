@@ -37,13 +37,18 @@ const eventHandlers: vNG.EventHandlers = {
   "node:pointerout": _ => {
     tooltipOpacity.value = 0 // hide
   },
+  "node:click": (event) => {
+    window.open(`https://goerli.etherscan.io/tx/${data.nodes[event.node].proposeTx}`)
+  }
 }
+
 </script>
 
 <template>
   <v-network-graph ref="graph" :nodes="data.nodes" :edges="data.edges" :layouts="data.layouts" :configs="data.configs"
     :event-handlers="eventHandlers" />
   <div ref="tooltip" class="tooltip" :style="{ ...tooltipPos, opacity: tooltipOpacity }">
+    <div>proposedAt: {{ data.nodes[targetNodeId]?.proposedAt ?? "" }}</div>
     <div>hash: {{ data.nodes[targetNodeId]?.hash ?? "" }}</div>
     <div>parentHash: {{ data.nodes[targetNodeId]?.parentBlockHash ?? "" }}</div>
     <div>finalized: {{ data.nodes[targetNodeId]?.finalized ?? "" }} </div>

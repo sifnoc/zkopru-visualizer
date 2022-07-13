@@ -15,6 +15,8 @@ const getNodes = (limit?: number) => {
     if (proposal.proposalNum > latestProposal.proposalNum - totalNodes) {
       result[blockHash] = {
         name: proposal.proposalNum,
+        proposedAt: proposal.proposedAt,
+        proposeTx: proposal.proposalTx,
         hash: proposal.block.hash,
         parentBlockHash: proposal.block.header.parentBlock,
         finalized: proposal.finalized
