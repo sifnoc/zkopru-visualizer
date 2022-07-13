@@ -45,6 +45,15 @@ const eventHandlers: vNG.EventHandlers = {
 </script>
 
 <template>
+  <div class="header-container">
+    <div class="header-text">
+      Zkopru Block Status
+      <div class="header-text inner">
+        <p>Showing Latest 100 blocks of zkopru L2 on goerli testnet</p>
+        <p style="{font-size: '12px'}">Click node you can show transaction details on etherscan</p>
+      </div>
+    </div>
+  </div>
   <v-network-graph ref="graph" :nodes="data.nodes" :edges="data.edges" :layouts="data.layouts" :configs="data.configs"
     :event-handlers="eventHandlers" />
   <div ref="tooltip" class="tooltip" :style="{ ...tooltipPos, opacity: tooltipOpacity }">
@@ -56,6 +65,20 @@ const eventHandlers: vNG.EventHandlers = {
 </template>
 
 <style lang="css" scoped>
+.header-container {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+.header-text {
+  font-size: 24px;
+  color: #000;
+}
+
+.header-text.inner {
+  font-size: 16px;
+}
+
 .tooltip-wrapper {
   position: relative;
 }
