@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, defineAsyncComponent } from 'vue'
 import VNetworkGraph from 'v-network-graph'
 import 'v-network-graph/lib/style.css'
 import App from './App.vue'

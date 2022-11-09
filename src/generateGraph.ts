@@ -1,44 +1,48 @@
 import { Nodes, Edges, Layouts, defineConfigs } from 'v-network-graph'
 
-const getNodes = (data: any, latestProposal: any, limit?: number) => {
+const getNodes = (proposals: any, latestProposal: any, limit?: number) => {
   const result: Nodes = {}
 
   const totalNodes = limit ?? 100
 
-  for (const blockHash of Object.keys(data)) {
-    const proposal = data[blockHash]
-    if (proposal.proposalNum > latestProposal.proposalNum - totalNodes) {
-      result[blockHash] = {
-        name: proposal.proposalNum.toString(),
-        proposedAt: proposal.proposedAt,
-        proposeTx: proposal.proposalTx,
-        hash: proposal.block.hash,
-        parentBlockHash: proposal.block.header.parentBlock,
-        finalized: proposal.finalized
+  for (const blockHash of Object.keys(proposals)) {
+    const proposal = proposals[blockHash]
+    try {
+      if (proposal.proposalNum > latestProposal.proposalNum - totalNodes) {
+        result[blockHash] = {
+          name: proposal.proposalNum.toString(),
+          proposedAt: proposal.proposedAt,
+          proposeTx: proposal.proposalTx,
+          hash: proposal.hash,
+          parentBlockHash: proposal.header.parentBlock,
+          finalized: proposal.finalized
+        }
       }
+    } catch(error) {
+      console.error(`generateGraph:getNodes error: ${error}`)
     }
   }
 
   return result
 }
 
-const getEdges = (data: any, latestProposal: any, limit?: number) => {
+const getEdges = (proposals: any, latestProposal: any, limit?: number) => {
   const result: Edges = {}
 
   const totalNodes = limit ?? 100
 
-  for (const blockHash of Object.keys(data)) {
-    const proposal = data[blockHash]
+  for (const blockHash of Object.keys(proposals)) {
+    const proposal = proposals[blockHash]
     if (proposal.proposalNum > latestProposal.proposalNum - totalNodes) {
-      result[blockHash] = { source: proposal.block.header.parentBlock, target: blockHash }
+      result[blockHash] = { source: proposal.header.parentBlock, target: blockHash }
     }
   }
 
   return result
 }
 
-const getLayouts = (data: any, proposals:any, limit?: number) => {
-  const { latestProposal, oldestProposal,childBlockHashes } = proposals
+const getLayouts = (proposals: any, boundraies:any, limit?: number) => {
+  const { latestProposal, oldestProposal, childBlockHashes } = boundraies
   const result: Layouts = { nodes: {} }
 
   let nextHash: string[] = [...latestProposal.proposalHashes]
@@ -49,16 +53,20 @@ const getLayouts = (data: any, proposals:any, limit?: number) => {
   const blockHeight: { [parentHash: string]: number } = {}
   const totalNodes = limit ?? 100
 
-  while (nextHash != []) {
+  while (nextHash.length > 0) {
     const blockHash = nextHash.pop()
-
     if (blockHash) {
-      const proposal = data[blockHash]
-      const parentHash = proposal.block.header.parentBlock
-      if (proposal && !blockHeight[parentHash] && proposal.proposalNum > latestProposal.proposalNum - totalNodes) {
-        blockHeight[parentHash] = fromLatestBlock
-        fromLatestBlock++
-        nextHash.push(parentHash) // add next queue
+      try {
+        const proposal = proposals[blockHash]
+        const parentHash = proposal.header.parentBlock
+        if (proposal && !blockHeight[parentHash] && proposal.proposalNum > latestProposal.proposalNum - totalNodes) {
+          blockHeight[parentHash] = fromLatestBlock
+          fromLatestBlock++
+          nextHash.push(parentHash) // add next queue
+        }
+      } catch (error) {
+        console.log(`All searched`)
+        break
       }
     } else {
       break
@@ -88,7 +96,7 @@ const getLayouts = (data: any, proposals:any, limit?: number) => {
     const fromTop = blockHeight[parentBlockHash]
     const height = totalHeight - fromTop
     childBlocks.forEach((blockHash: string, index: number) => {
-      const proposal = data[blockHash]
+      const proposal = proposals[blockHash]
       if (proposal.proposalNum > latestProposal.proposalNum - totalNodes)
         result.nodes[blockHash] = { x: 180 * (height - 1), y: 80 * index }
     })

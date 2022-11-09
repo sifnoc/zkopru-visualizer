@@ -1,47 +1,103 @@
 <script setup lang="ts">
-import { reactive, computed, ref } from 'vue'
-import * as vNG from 'v-network-graph'
-import data from './data'
+import { ref, onMounted } from 'vue'
+import rawData from './goerli_testnet_blockData'
+import DrawNetwork from './components/DrawNetwork'
 
-// ref="graph"
-const graph = ref<vNG.Instance>()
-// ref="tooltip"
-const tooltip = ref<HTMLDivElement>()
+const latestBlockNumber = ref(0)
+const coordinatorData = ref<any>()
 
-// positions of the center of nodes
-const layouts = ref(data.layouts)
-
-const NODE_RADIUS = 16
-const targetNodeId = ref("")
-
-const tooltipPos = computed(() => {
-  if (!graph.value || !tooltip.value) return { x: 0, y: 0 }
-  if (!targetNodeId.value) return { x: 0, y: 0 }
-
-  const nodePos = layouts.value.nodes[targetNodeId.value]
-  // translate coordinates: SVG -> DOM
-  const domPoint = graph.value.translateFromSvgToDomCoordinates(nodePos)
-  // calculates top-left position of the tooltip.
-  return {
-    left: domPoint.x - tooltip.value.offsetWidth / 2 + "px",
-    top: domPoint.y - NODE_RADIUS - tooltip.value.offsetHeight - 10 + "px",
-  }
-})
-const tooltipOpacity = ref(0) // 0 or 1
-
-const eventHandlers: vNG.EventHandlers = {
-  "node:pointerover": ({ node }) => {
-    targetNodeId.value = node
-    tooltipOpacity.value = 1 // show
-  },
-  "node:pointerout": _ => {
-    tooltipOpacity.value = 0 // hide
-  },
-  "node:click": (event) => {
-    window.open(`https://goerli.etherscan.io/tx/${data.nodes[event.node].proposeTx}`)
-  }
+const getBlockData = async (index?: number) => {
+  const res = await fetch('https://node2.zkopru.network/', {
+    method: 'post',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      id: Math.floor(Math.random() * 100000000),
+      jsonrpc: '2.0',
+      method: 'l2_getBlockByIndex',
+      params: [index ? `0x${index.toString(16)}` : `latest`, false],
+    }),
+  })
+  const resData = await res.json()
+  return resData.result
 }
 
+const parseData = (blockData: any) => {
+  const proposals: any = {}
+  const childBlockHashes: any = {}
+
+  let oldestProposal: any = {}
+  let lowestBlockNumber = Infinity
+  for (const data of blockData) {
+    // proposal dict data
+    const proposalNum = parseInt(data.proposalNum, 16)
+    try {
+      const proposedAt = parseInt(data.proposedAt, 16)
+      const finalized = data.finalized ? true : false
+      proposals[data.hash] = { ...data, proposalNum, proposedAt, finalized }
+    } catch (error) {
+      console.warn(`pasing error: ${error}`)
+    }
+
+    const parentBlockHash = data.header.parentBlock.toString()
+    if (!childBlockHashes[parentBlockHash]) {
+      childBlockHashes[parentBlockHash] = [data.hash]
+    } else if (
+      childBlockHashes[parentBlockHash] &&
+      !childBlockHashes[parentBlockHash].includes(data.hash)
+    ) {
+      childBlockHashes[parentBlockHash].push(data.hash)
+    }
+
+    // update oldestProposal
+    if (proposalNum == lowestBlockNumber)
+      oldestProposal.proposalHashes.push(data.hash)
+    if (proposalNum < lowestBlockNumber) {
+      oldestProposal = {
+        proposalNum,
+        proposalHashes: [data.hash],
+      }
+      lowestBlockNumber = proposalNum
+    }
+  }
+
+  return { proposals, oldestProposal, childBlockHashes }
+}
+
+onMounted(async () => {
+  const latestBlock = await getBlockData()
+  const latestProposalNum = parseInt(latestBlock.proposalNum, 16)
+  const startBlockNumber = latestProposalNum - 30
+
+  const requestData = []
+  for (let i = startBlockNumber -1 ; i < latestProposalNum + 1; i++) {
+    requestData.push(getBlockData(i))
+  }
+
+  const unparsedData = await Promise.all(requestData)
+  console.log(`DataLoaded: ${JSON.stringify(unparsedData.length)}`)
+  const parsedData = parseData(unparsedData)
+
+  // update latest block number at last
+  latestBlockNumber.value = latestProposalNum
+  const blockData = {
+    proposals: parsedData.proposals,
+    index: {
+      latestProposal: {
+        proposalNum: latestProposalNum,
+        proposalHashes: [latestBlock.hash],
+      },
+      oldestProposal: parsedData.oldestProposal,
+      childBlockHashes: parsedData.childBlockHashes
+    },
+  }
+  coordinatorData.value = blockData
+
+  console.log(Object.keys(blockData))
+  return coordinatorData
+})
 </script>
 
 <template>
@@ -49,19 +105,21 @@ const eventHandlers: vNG.EventHandlers = {
     <div class="header-text">
       Zkopru Block Status
       <div class="header-text inner">
+        <p>Current Block Count: {{ latestBlockNumber }}</p>
         <p>Showing Latest 100 blocks of zkopru L2 on goerli testnet</p>
-        <p style="{font-size: '12px'}">Click node you can show transaction details on etherscan</p>
+        <p
+          style="
+             {
+              font-size: '12px';
+            }
+          "
+        >
+          Click node you can show transaction details on etherscan
+        </p>
       </div>
     </div>
   </div>
-  <v-network-graph ref="graph" :nodes="data.nodes" :edges="data.edges" :layouts="data.layouts" :configs="data.configs"
-    :event-handlers="eventHandlers" />
-  <div ref="tooltip" class="tooltip" :style="{ ...tooltipPos, opacity: tooltipOpacity }">
-    <div>proposedAt: {{ data.nodes[targetNodeId]?.proposedAt ?? "" }}</div>
-    <div>hash: {{ data.nodes[targetNodeId]?.hash ?? "" }}</div>
-    <div>parentHash: {{ data.nodes[targetNodeId]?.parentBlockHash ?? "" }}</div>
-    <div>finalized: {{ data.nodes[targetNodeId]?.finalized ?? "" }} </div>
-  </div>
+  <DrawNetwork v-if="coordinatorData" v-bind="coordinatorData" />
 </template>
 
 <style lang="css" scoped>
@@ -69,31 +127,5 @@ const eventHandlers: vNG.EventHandlers = {
   padding: 24px;
   display: flex;
   flex-direction: column;
-}
-.header-text {
-  font-size: 24px;
-  color: #000;
-}
-
-.header-text.inner {
-  font-size: 16px;
-}
-
-.tooltip-wrapper {
-  position: relative;
-}
-
-.tooltip {
-  top: 0;
-  left: 0;
-  opacity: 0;
-  position: absolute;
-  padding: 10px;
-  text-align: left;
-  font-size: 12px;
-  background-color: #fff0bd;
-  border: 1px solid #ffb950;
-  box-shadow: 2px 2px 2px #aaa;
-  transition: opacity 0.2s linear;
 }
 </style>
