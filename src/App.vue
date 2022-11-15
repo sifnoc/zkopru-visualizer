@@ -1,99 +1,189 @@
 <script setup lang="ts">
-import { reactive, computed, ref } from 'vue'
-import * as vNG from 'v-network-graph'
-import data from './data'
+import { ref, onMounted } from 'vue'
+import DrawNetwork from './components/DrawNetwork'
 
-// ref="graph"
-const graph = ref<vNG.Instance>()
-// ref="tooltip"
-const tooltip = ref<HTMLDivElement>()
+const coordinatorUrl = ref('https://node2.zkopru.network/')
+const coordinatorData = ref<any>()
+const latestBlockNumber = ref<number | null>()
 
-// positions of the center of nodes
-const layouts = ref(data.layouts)
+const getBlockData = async (index?: number) => {
+  const res = await fetch(coordinatorUrl.value, {
+    method: 'post',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      id: Math.floor(Math.random() * 100000000),
+      jsonrpc: '2.0',
+      method: 'l2_getBlockByIndex',
+      params: [index ? `0x${index.toString(16)}` : `latest`, false],
+    }),
+  })
+  const resData = await res.json()
+  return resData.result
+}
 
-const NODE_RADIUS = 16
-const targetNodeId = ref("")
+const parseData = (blockData: any) => {
+  const proposals: any = {}
+  const childBlockHashes: any = {}
 
-const tooltipPos = computed(() => {
-  if (!graph.value || !tooltip.value) return { x: 0, y: 0 }
-  if (!targetNodeId.value) return { x: 0, y: 0 }
+  let oldestProposal: any = {}
+  let lowestBlockNumber = Infinity
+  for (const data of blockData) {
+    // proposal dict data
+    const proposalNum = parseInt(data.proposalNum, 16)
+    const canonicalNum = parseInt(data.canonicalNum, 16)
+    try {
+      const proposedAt = parseInt(data.proposedAt, 16)
+      const finalized = data.finalized ? true : false
+      proposals[data.hash] = {
+        ...data,
+        proposalNum,
+        canonicalNum,
+        proposedAt,
+        finalized,
+      }
+    } catch (error) {
+      console.warn(`parseData:pasing error: ${error}`)
+    }
 
-  const nodePos = layouts.value.nodes[targetNodeId.value]
-  // translate coordinates: SVG -> DOM
-  const domPoint = graph.value.translateFromSvgToDomCoordinates(nodePos)
-  // calculates top-left position of the tooltip.
-  return {
-    left: domPoint.x - tooltip.value.offsetWidth / 2 + "px",
-    top: domPoint.y - NODE_RADIUS - tooltip.value.offsetHeight - 10 + "px",
+    const parentBlockHash = data.header.parentBlock.toString()
+    if (!childBlockHashes[parentBlockHash]) {
+      childBlockHashes[parentBlockHash] = [data.hash]
+    } else if (
+      childBlockHashes[parentBlockHash] &&
+      !childBlockHashes[parentBlockHash].includes(data.hash)
+    ) {
+      childBlockHashes[parentBlockHash].push(data.hash)
+    }
+
+    // update oldestProposal
+    if (proposalNum == lowestBlockNumber)
+      oldestProposal.proposalHashes.push(data.hash)
+    if (proposalNum < lowestBlockNumber) {
+      oldestProposal = {
+        proposalNum,
+        proposalHashes: [data.hash],
+      }
+      lowestBlockNumber = proposalNum
+    }
   }
-})
-const tooltipOpacity = ref(0) // 0 or 1
 
-const eventHandlers: vNG.EventHandlers = {
-  "node:pointerover": ({ node }) => {
-    targetNodeId.value = node
-    tooltipOpacity.value = 1 // show
-  },
-  "node:pointerout": _ => {
-    tooltipOpacity.value = 0 // hide
-  },
-  "node:click": (event) => {
-    window.open(`https://goerli.etherscan.io/tx/${data.nodes[event.node].proposeTx}`)
+  return { proposals, oldestProposal, childBlockHashes }
+}
+
+const fetchData = async (url?: string) => {
+  const latestBlock = await getBlockData()
+  const latestProposalNum = parseInt(latestBlock.proposalNum, 16)
+  const startBlockNumber = latestProposalNum - 100
+
+  const requestData = []
+  for (let i = startBlockNumber - 1; i < latestProposalNum + 1; i++) {
+    requestData.push(getBlockData(i))
+  }
+
+  const unparsedData = await Promise.all(requestData)
+  const parsedData = parseData(unparsedData)
+
+  // update latest block number at last
+  latestBlockNumber.value = latestProposalNum
+  const blockData = {
+    proposals: parsedData.proposals,
+    index: {
+      latestProposal: {
+        proposalNum: latestProposalNum,
+        proposalHashes: [latestBlock.hash],
+      },
+      oldestProposal: parsedData.oldestProposal,
+      childBlockHashes: parsedData.childBlockHashes,
+    },
+  }
+  coordinatorData.value = blockData
+  return coordinatorData
+}
+
+const fetchDataFromUrl = async () => {
+  coordinatorData.value = null
+  latestBlockNumber.value = null
+  try {
+    await fetchData()
+  } catch (error) {
+    latestBlockNumber.value = -1
+    console.error(`Error while fetch data from ${coordinatorUrl.value}`)
   }
 }
 
+onMounted(async () => {
+  await fetchData()
+})
 </script>
 
 <template>
   <div class="header-container">
     <div class="header-text">
-      Zkopru Block Status
+      <p>Zkopru Block Visualizer</p>
       <div class="header-text inner">
-        <p>Showing Latest 100 blocks of zkopru L2 on goerli testnet</p>
-        <p style="{font-size: '12px'}">Click node you can show transaction details on etherscan</p>
+        <div class="node-pannel">
+          <div style="padding-left: 10px; padding-right: 20px">
+            <label for="search" class="hidden-visually"
+              >Coordinator URL:
+            </label>
+            <input
+              type="text"
+              name="nodeUrl"
+              id="nodeUrl"
+              v-model="coordinatorUrl"
+            />
+            <button v-on:click="fetchDataFromUrl">Get Data</button>
+          </div>
+          <div style="padding-right: 10px">
+            <p v-if="latestBlockNumber == null">Loading</p>
+            <p v-else-if="latestBlockNumber == -1">Could not fetch data, Please check URL</p>
+            <p v-else-if="latestBlockNumber >= 0">
+              Current Block Count: {{ latestBlockNumber }}
+            </p>
+            <p v-else>Unknown</p>
+          </div>
+        </div>
+        <p>Showing Latest 100 blocks on the coordinator</p>
+        <p
+          style="
+             {
+              font-size: '12px';
+            }
+          "
+        >
+          Click node you can show transaction details on goerli etherscan
+        </p>
       </div>
     </div>
   </div>
-  <v-network-graph ref="graph" :nodes="data.nodes" :edges="data.edges" :layouts="data.layouts" :configs="data.configs"
-    :event-handlers="eventHandlers" />
-  <div ref="tooltip" class="tooltip" :style="{ ...tooltipPos, opacity: tooltipOpacity }">
-    <div>proposedAt: {{ data.nodes[targetNodeId]?.proposedAt ?? "" }}</div>
-    <div>hash: {{ data.nodes[targetNodeId]?.hash ?? "" }}</div>
-    <div>parentHash: {{ data.nodes[targetNodeId]?.parentBlockHash ?? "" }}</div>
-    <div>finalized: {{ data.nodes[targetNodeId]?.finalized ?? "" }} </div>
-  </div>
+  <DrawNetwork v-if="coordinatorData" v-bind="coordinatorData" />
 </template>
 
 <style lang="css" scoped>
 .header-container {
-  padding: 24px;
+  padding: 12px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
 }
 .header-text {
   font-size: 24px;
   color: #000;
+  flex-direction: column;
 }
 
 .header-text.inner {
   font-size: 16px;
 }
 
-.tooltip-wrapper {
-  position: relative;
-}
-
-.tooltip {
-  top: 0;
-  left: 0;
-  opacity: 0;
-  position: absolute;
-  padding: 10px;
-  text-align: left;
-  font-size: 12px;
-  background-color: #fff0bd;
-  border: 1px solid #ffb950;
-  box-shadow: 2px 2px 2px #aaa;
-  transition: opacity 0.2s linear;
+.node-pannel {
+  border: 1px solid #000;
+  vertical-align: center;
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
 }
 </style>
