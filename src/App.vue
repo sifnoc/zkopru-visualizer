@@ -110,7 +110,7 @@ const fetchDataFromUrl = async () => {
     await fetchData()
   } catch (error) {
     latestBlockNumber.value = -1
-    console.error(`Error while fetch data from ${coordinatorUrl}`)
+    console.error(`Error while fetch data from ${coordinatorUrl.value}`)
   }
 }
 
