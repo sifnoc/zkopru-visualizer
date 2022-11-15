@@ -1,86 +1,78 @@
-<script lang="ts">
-import { ref, computed, toRefs } from 'vue'
+<script setup lang="ts">
+import { ref, computed, toRefs, onMounted, defineProps } from 'vue'
 import * as vNG from 'v-network-graph'
 import vgraph from '../generateGraph'
 
-// non-setup style
-export default {
-  props: ['proposals', 'index'],
+const props = defineProps(['proposals', 'index'])
 
-  setup(props: any) {
-    // console.log(`proposals: ${Object.keys(props)}`)
-    const { proposals, index } = toRefs(props)
-    const { latestProposal, oldestProposal, childBlockHashes } = index.value
+const { proposals, index } = toRefs(props)
+const { latestProposal, oldestProposal, childBlockHashes } = index!.value
+const proposalData = Object.assign({}, proposals!.value)
 
-    const proposalData = Object.assign({}, proposals.value)
-    const nodes = vgraph.getNodes(proposalData, latestProposal)
-    const edges = vgraph.getEdges(proposalData, latestProposal)
-    const layouts = vgraph.getLayouts(proposalData, {
-      latestProposal,
-      oldestProposal,
-      childBlockHashes
+const graphData = ref({
+  nodes: vgraph.getNodes(proposalData, latestProposal),
+  edges: vgraph.getEdges(proposalData, latestProposal),
+  layouts: vgraph.getLayouts(proposalData, {
+    latestProposal,
+    oldestProposal,
+    childBlockHashes,
+  }),
+})
+
+// ref="graph"
+const graph = ref<vNG.VNetworkGraphInstance>()
+const tooltip = ref<HTMLDivElement>()
+
+const targetNodeId = ref('')
+
+const tooltipPos = computed(() => {
+  if (!graph.value || !tooltip.value) return { x: 0, y: 0 }
+  if (!targetNodeId.value) return { x: 0, y: 0 }
+  const nodePos = graphData.value.layouts.nodes[targetNodeId.value]
+  // translate coordinates: SVG -> DOM
+  const domPoint = graph.value.translateFromSvgToDomCoordinates(nodePos)
+  // calculates top-left position of the tooltip.
+  return {
+    left: domPoint.x + 'px',
+    top: domPoint.y - 2 + 'px',
+  }
+})
+
+const tooltipOpacity = ref(0) // 0 or 1
+
+const eventHandlers: vNG.EventHandlers = {
+  "view:load": () => {
+    if (!graph.value || latestProposal.proposalHashes.length == 0) return
+    // Pan the target node position to the center.
+    const sizes = graph.value.getSizes()
+    const latestBlockHash = latestProposal.proposalHashes[0]
+    graph.value.panTo({
+      x: sizes.width / 2 - graphData.value.layouts.nodes[latestBlockHash].x,
+      y: sizes.height / 2 - graphData.value.layouts.nodes[latestBlockHash].y,
     })
-
-    // ref="graph"
-    const graph = ref<vNG.Instance>()
-    // ref="tooltip"
-    const tooltip = ref<HTMLDivElement>()
-
-    const NODE_RADIUS = 16
-    const targetNodeId = ref('')
-
-    const tooltipPos = computed(() => {
-      if (!graph.value || !tooltip.value) return { x: 0, y: 0 }
-      if (!targetNodeId.value) return { x: 0, y: 0 }
-
-      const nodePos = layouts.nodes[targetNodeId.value]
-      // translate coordinates: SVG -> DOM
-      const domPoint = graph.value.translateFromSvgToDomCoordinates(nodePos)
-      // calculates top-left position of the tooltip.
-      return {
-        left: domPoint.x - tooltip.value.offsetWidth / 2 + 'px',
-        top: domPoint.y - NODE_RADIUS - tooltip.value.offsetHeight - 10 + 'px',
-      }
-    })
-    const tooltipOpacity = ref(0) // 0 or 1
-
-    const eventHandlers: vNG.EventHandlers = {
-      'node:pointerover': ({ node }) => {
-        targetNodeId.value = node
-        tooltipOpacity.value = 1 // show
-      },
-      'node:pointerout': (_) => {
-        tooltipOpacity.value = 0 // hide
-      },
-      'node:click': (event) => {
-        window.open(
-          `https://goerli.etherscan.io/tx/${nodes[event.node].proposeTx}`
-        )
-      },
-    }
-    return {
-      data: {
-        nodes,
-        edges,
-        layouts,
-        configs: vgraph.configs,
-      },
-      targetNodeId,
-      tooltipPos,
-      tooltipOpacity,
-      eventHandlers,
-    }
+  },
+  'node:pointerover': ({ node }) => {
+    targetNodeId.value = node
+    tooltipOpacity.value = 1 // show
+  },
+  'node:pointerout': (_) => {
+    tooltipOpacity.value = 0 // hide
+  },
+  'node:click': (event) => {
+    const { nodes } = graphData.value
+    window.open(`https://goerli.etherscan.io/tx/${nodes[event.node].proposeTx}`)
   },
 }
+
 </script>
 
 <template>
   <v-network-graph
     ref="graph"
-    :nodes="data.nodes"
-    :edges="data.edges"
-    :layouts="data.layouts"
-    :configs="data.configs"
+    :nodes="graphData.nodes"
+    :edges="graphData.edges"
+    :layouts="graphData.layouts"
+    :configs="vgraph.configs"
     :event-handlers="eventHandlers"
   />
   <div
@@ -88,10 +80,12 @@ export default {
     class="tooltip"
     :style="{ ...tooltipPos, opacity: tooltipOpacity }"
   >
-    <div>proposedAt: {{ data.nodes[targetNodeId]?.proposedAt ?? '' }}</div>
-    <div>hash: {{ data.nodes[targetNodeId]?.hash ?? '' }}</div>
-    <div>parentHash: {{ data.nodes[targetNodeId]?.parentBlockHash ?? '' }}</div>
-    <div>finalized: {{ data.nodes[targetNodeId]?.finalized ?? '' }}</div>
+    <div>proposedAt: {{ graphData.nodes[targetNodeId]?.proposedAt ?? '' }}</div>
+    <div>hash: {{ graphData.nodes[targetNodeId]?.hash ?? '' }}</div>
+    <div>
+      parentHash: {{ graphData.nodes[targetNodeId]?.parentBlockHash ?? '' }}
+    </div>
+    <div>finalized: {{ graphData.nodes[targetNodeId]?.finalized ?? '' }}</div>
   </div>
 </template>
 

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import rawData from './goerli_testnet_blockData'
 import DrawNetwork from './components/DrawNetwork'
 
 const latestBlockNumber = ref(0)
@@ -33,12 +32,13 @@ const parseData = (blockData: any) => {
   for (const data of blockData) {
     // proposal dict data
     const proposalNum = parseInt(data.proposalNum, 16)
+    const canonicalNum = parseInt(data.canonicalNum, 16)
     try {
       const proposedAt = parseInt(data.proposedAt, 16)
       const finalized = data.finalized ? true : false
-      proposals[data.hash] = { ...data, proposalNum, proposedAt, finalized }
+      proposals[data.hash] = { ...data, proposalNum, canonicalNum, proposedAt, finalized }
     } catch (error) {
-      console.warn(`pasing error: ${error}`)
+      console.warn(`parseData:pasing error: ${error}`)
     }
 
     const parentBlockHash = data.header.parentBlock.toString()
@@ -69,7 +69,7 @@ const parseData = (blockData: any) => {
 onMounted(async () => {
   const latestBlock = await getBlockData()
   const latestProposalNum = parseInt(latestBlock.proposalNum, 16)
-  const startBlockNumber = latestProposalNum - 30
+  const startBlockNumber = latestProposalNum - 100
 
   const requestData = []
   for (let i = startBlockNumber -1 ; i < latestProposalNum + 1; i++) {
@@ -77,7 +77,6 @@ onMounted(async () => {
   }
 
   const unparsedData = await Promise.all(requestData)
-  console.log(`DataLoaded: ${JSON.stringify(unparsedData.length)}`)
   const parsedData = parseData(unparsedData)
 
   // update latest block number at last
@@ -94,8 +93,6 @@ onMounted(async () => {
     },
   }
   coordinatorData.value = blockData
-
-  console.log(Object.keys(blockData))
   return coordinatorData
 })
 </script>
