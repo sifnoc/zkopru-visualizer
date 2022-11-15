@@ -2,11 +2,12 @@
 import { ref, onMounted } from 'vue'
 import DrawNetwork from './components/DrawNetwork'
 
-const latestBlockNumber = ref(0)
+const coordinatorUrl = ref('https://node2.zkopru.network/')
 const coordinatorData = ref<any>()
+const latestBlockNumber = ref<number | null>()
 
 const getBlockData = async (index?: number) => {
-  const res = await fetch('https://node2.zkopru.network/', {
+  const res = await fetch(coordinatorUrl.value, {
     method: 'post',
     headers: {
       accept: 'application/json',
@@ -36,7 +37,13 @@ const parseData = (blockData: any) => {
     try {
       const proposedAt = parseInt(data.proposedAt, 16)
       const finalized = data.finalized ? true : false
-      proposals[data.hash] = { ...data, proposalNum, canonicalNum, proposedAt, finalized }
+      proposals[data.hash] = {
+        ...data,
+        proposalNum,
+        canonicalNum,
+        proposedAt,
+        finalized,
+      }
     } catch (error) {
       console.warn(`parseData:pasing error: ${error}`)
     }
@@ -66,13 +73,13 @@ const parseData = (blockData: any) => {
   return { proposals, oldestProposal, childBlockHashes }
 }
 
-onMounted(async () => {
+const fetchData = async (url?: string) => {
   const latestBlock = await getBlockData()
   const latestProposalNum = parseInt(latestBlock.proposalNum, 16)
   const startBlockNumber = latestProposalNum - 100
 
   const requestData = []
-  for (let i = startBlockNumber -1 ; i < latestProposalNum + 1; i++) {
+  for (let i = startBlockNumber - 1; i < latestProposalNum + 1; i++) {
     requestData.push(getBlockData(i))
   }
 
@@ -89,20 +96,56 @@ onMounted(async () => {
         proposalHashes: [latestBlock.hash],
       },
       oldestProposal: parsedData.oldestProposal,
-      childBlockHashes: parsedData.childBlockHashes
+      childBlockHashes: parsedData.childBlockHashes,
     },
   }
   coordinatorData.value = blockData
   return coordinatorData
+}
+
+const fetchDataFromUrl = async () => {
+  coordinatorData.value = null
+  latestBlockNumber.value = null
+  try {
+    await fetchData()
+  } catch (error) {
+    latestBlockNumber.value = -1
+    console.error(`Error while fetch data from ${coordinatorUrl}`)
+  }
+}
+
+onMounted(async () => {
+  await fetchData()
 })
 </script>
 
 <template>
   <div class="header-container">
     <div class="header-text">
-      Zkopru Block Status
+      <p>Zkopru Block Visualizer</p>
       <div class="header-text inner">
-        <p>Current Block Count: {{ latestBlockNumber }}</p>
+        <div class="node-pannel">
+          <div style="padding-left: 10px; padding-right: 20px">
+            <label for="search" class="hidden-visually"
+              >Coordinator URL:
+            </label>
+            <input
+              type="text"
+              name="nodeUrl"
+              id="nodeUrl"
+              v-model="coordinatorUrl"
+            />
+            <button v-on:click="fetchDataFromUrl">Get Data</button>
+          </div>
+          <div style="padding-right: 10px">
+            <p v-if="latestBlockNumber == null">Loading</p>
+            <p v-else-if="latestBlockNumber == -1">Could not fetch data, Please check URL</p>
+            <p v-else-if="latestBlockNumber >= 0">
+              Current Block Count: {{ latestBlockNumber }}
+            </p>
+            <p v-else>Unknown</p>
+          </div>
+        </div>
         <p>Showing Latest 100 blocks of zkopru L2 on goerli testnet</p>
         <p
           style="
@@ -111,7 +154,7 @@ onMounted(async () => {
             }
           "
         >
-          Click node you can show transaction details on etherscan
+          Click node you can show transaction details on goerli etherscan
         </p>
       </div>
     </div>
@@ -121,8 +164,26 @@ onMounted(async () => {
 
 <style lang="css" scoped>
 .header-container {
-  padding: 24px;
+  padding: 12px;
   display: flex;
+  flex-direction: row;
+}
+.header-text {
+  font-size: 24px;
+  color: #000;
   flex-direction: column;
+}
+
+.header-text.inner {
+  font-size: 16px;
+}
+
+.node-pannel {
+  border: 1px solid #000;
+  vertical-align: center;
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
 }
 </style>
