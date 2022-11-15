@@ -47,7 +47,7 @@ const eventHandlers: vNG.EventHandlers = {
     const sizes = graph.value.getSizes()
     const latestBlockHash = latestProposal.proposalHashes[0]
     graph.value.panTo({
-      x: sizes.width / 2 - graphData.value.layouts.nodes[latestBlockHash].x,
+      x: sizes.width - graphData.value.layouts.nodes[latestBlockHash].x - 160,
       y: sizes.height / 2 - graphData.value.layouts.nodes[latestBlockHash].y,
     })
   },

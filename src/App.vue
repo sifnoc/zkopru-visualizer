@@ -146,7 +146,7 @@ onMounted(async () => {
             <p v-else>Unknown</p>
           </div>
         </div>
-        <p>Showing Latest 100 blocks of zkopru L2 on goerli testnet</p>
+        <p>Showing Latest 100 blocks on the coordinator</p>
         <p
           style="
              {
